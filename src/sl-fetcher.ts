@@ -3,9 +3,9 @@ import { SLFetcherError } from './sl-fetcher-error';
 type ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob';
 
 type CustomConfig = {
-  responseType: ResponseType;
-  fetchConfig: RequestInit;
-};
+  responseType?: ResponseType;
+  fetchConfig?: RequestInit;
+} & RequestInit;
 
 type SLFetcherConfig = {
   baseURL?: string;
@@ -15,15 +15,19 @@ type RequestMethod = 'POST' | 'PUT' | 'PATCH' | 'GET' | 'DELETE';
 
 type RequestInterceptor = (
   url: string,
-  config?: RequestInit
-) => Promise<void | RequestInit>;
+  config: RequestInit,
+) => Promise<void | CustomConfig>;
 
 type ResponseInterceptor = (res: Response) => void;
 
 export class SLFetcher {
+  private defaultConfig: CustomConfig = {
+    responseType: 'json',
+  };
+
   baseURL: string;
-  requestInterceptors: Array<RequestInterceptor> = [];
-  responseInterceptors: Array<ResponseInterceptor> = [];
+  requestInterceptors: Set<RequestInterceptor> = new Set();
+  responseInterceptors: Set<ResponseInterceptor> = new Set();
 
   constructor(config?: SLFetcherConfig) {
     this.baseURL = config?.baseURL || '';
@@ -57,33 +61,12 @@ export class SLFetcher {
     url: string,
     method: RequestMethod,
     data?: D,
-    config?: CustomConfig
+    config = this.defaultConfig,
   ) {
-    const modifyedConfig = await this.modifyedRequestConfig(url, {
+    let modifyedConfig: typeof config = {
       ...config?.fetchConfig,
       method,
-    });
-
-    const res = await fetch(
-      `${this.baseURL}/${this.formatURL(url)}`,
-      data ? this.fetchDataConfig(data, modifyedConfig) : modifyedConfig
-    );
-
-    if (res.ok) {
-      const responce = await this.parseResponce<T>(res, config?.responseType);
-
-      for (const interceptor of this.responseInterceptors) {
-        interceptor(res);
-      }
-
-      return responce;
-    }
-
-    throw await this.createError(res);
-  }
-
-  async modifyedRequestConfig(url: string, config?: RequestInit) {
-    let modifyedConfig = config;
+    };
 
     for (const interceptor of this.requestInterceptors) {
       modifyedConfig = {
@@ -92,26 +75,45 @@ export class SLFetcher {
       };
     }
 
-    return modifyedConfig;
+    const res = await fetch(
+      `${this.baseURL}/${this.formatURL(url)}`,
+      data ? this.fetchDataConfig(data, modifyedConfig) : modifyedConfig,
+    );
+
+    if (res.ok) {
+      for (const interceptor of this.responseInterceptors) {
+        interceptor(res);
+      }
+
+      return this.parseResponce<T>(res, config?.responseType);
+    }
+
+    throw await this.createError(res);
   }
 
   async createError(res: Response) {
     return new SLFetcherError(
       res.statusText,
       res,
-      res.headers.get('Content-Type') === 'application/json; charset=UTF-8'
+      res.headers.get('Content-Type')?.includes('application/json')
         ? await res.json()
-        : undefined
+        : undefined,
     );
   }
 
   async parseResponce<T>(res: Response, type?: ResponseType) {
-    if (res.body === null || res.body === undefined) return undefined;
-    if (type === 'blob') return (await res.blob()) as T;
-    if (type === 'arrayBuffer') return (await res.arrayBuffer()) as T;
-    if (type === 'text') return (await res.text()) as T;
+    try {
+      if (type === 'blob') return (await res.blob()) as T;
+      if (type === 'arrayBuffer') return (await res.arrayBuffer()) as T;
+      if (type === 'text') return (await res.text()) as T;
 
-    return (await res.json()) as T;
+      return (await res.json()) as T;
+    } catch {
+      throw new SLFetcherError(
+        `Config field: "responseType" is incorrect: ${type}. Received Content-Type: ${res.headers.get('Content-Type')}`,
+        res,
+      );
+    }
   }
 
   fetchDataConfig(data: unknown, config?: RequestInit): RequestInit {
@@ -135,14 +137,6 @@ export class SLFetcher {
     }
 
     return init;
-  }
-
-  addRequestInterceptor(interceptor: RequestInterceptor) {
-    this.requestInterceptors.push(interceptor);
-  }
-
-  addResponceInterceptor(interceptor: ResponseInterceptor) {
-    this.responseInterceptors.push(interceptor);
   }
 
   formatURL(url: string) {

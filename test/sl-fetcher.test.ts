@@ -39,10 +39,10 @@ fetchMock
 fetchMock
   .mockGlobal()
   .get(`${BASE_URL}/authorization`, (v) =>
-    v.options.headers?.['authorization'] ? 200 : 403
+    v.options.headers?.['authorization'] ? 200 : 403,
   )
   .post(`${BASE_URL}/authorization`, (v) =>
-    v.options.headers?.['authorization'] ? 200 : 403
+    v.options.headers?.['authorization'] ? 200 : 403,
   );
 
 fetchMock.mockGlobal().post(`${BASE_URL}/form`, (v) => {
