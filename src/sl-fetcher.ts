@@ -1,11 +1,11 @@
 import { SLFetcherError } from './sl-fetcher-error';
 
-type ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob';
+type ResponseType = 'json' | 'text' | 'arrayBuffer' | 'blob' | 'none';
 
 type CustomConfig = {
   responseType?: ResponseType;
   fetchConfig?: RequestInit;
-} & RequestInit;
+};
 
 type SLFetcherConfig = {
   baseURL?: string;
@@ -16,15 +16,11 @@ type RequestMethod = 'POST' | 'PUT' | 'PATCH' | 'GET' | 'DELETE';
 type RequestInterceptor = (
   url: string,
   config: RequestInit,
-) => Promise<void | CustomConfig>;
+) => Promise<void | RequestInit>;
 
 type ResponseInterceptor = (res: Response) => void;
 
 export class SLFetcher {
-  private defaultConfig: CustomConfig = {
-    responseType: 'json',
-  };
-
   baseURL: string;
   requestInterceptors: Set<RequestInterceptor> = new Set();
   responseInterceptors: Set<ResponseInterceptor> = new Set();
@@ -61,23 +57,23 @@ export class SLFetcher {
     url: string,
     method: RequestMethod,
     data?: D,
-    config = this.defaultConfig,
+    config?: CustomConfig,
   ) {
-    let modifyedConfig: typeof config = {
+    let fetchConfig: RequestInit = {
       ...config?.fetchConfig,
       method,
     };
 
     for (const interceptor of this.requestInterceptors) {
-      modifyedConfig = {
-        ...modifyedConfig,
-        ...(await interceptor(url, modifyedConfig)),
+      fetchConfig = {
+        ...fetchConfig,
+        ...(await interceptor(url, fetchConfig)),
       };
     }
 
     const res = await fetch(
       `${this.baseURL}/${this.formatURL(url)}`,
-      data ? this.fetchDataConfig(data, modifyedConfig) : modifyedConfig,
+      data ? this.fetchDataConfig(data, fetchConfig) : fetchConfig,
     );
 
     if (res.ok) {
@@ -85,7 +81,7 @@ export class SLFetcher {
         interceptor(res);
       }
 
-      return this.parseResponce<T>(res, config?.responseType);
+      return this.parseResponce<T>(res, config?.responseType || 'json');
     }
 
     throw await this.createError(res);
@@ -101,8 +97,10 @@ export class SLFetcher {
     );
   }
 
-  async parseResponce<T>(res: Response, type?: ResponseType) {
+  async parseResponce<T>(res: Response, type: ResponseType) {
     try {
+      if (type === 'none') return undefined as T;
+
       if (type === 'blob') return (await res.blob()) as T;
       if (type === 'arrayBuffer') return (await res.arrayBuffer()) as T;
       if (type === 'text') return (await res.text()) as T;

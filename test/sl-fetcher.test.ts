@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest';
 import fetchMock from 'fetch-mock';
 import { SLFetcher } from '../src/sl-fetcher';
-import { isSLFetcherError } from '../src/utils/is-sl-fetcher-error';
+import { isSLFetcherError } from '../src/is-sl-fetcher-error';
 
 const POST_DATA = {
   userId: 1,
@@ -65,7 +65,7 @@ test('GET success with data', async () => {
 });
 
 test('GET success without data', async () => {
-  const data = await slFetcher.get('empty');
+  const data = await slFetcher.get<string>('empty', { responseType: 'none' });
   expect(data).toBe(undefined);
 });
 
@@ -90,7 +90,7 @@ test('GET error without data', async () => {
 
 test('GET error with data', async () => {
   try {
-    await slFetcher.get('error');
+    await slFetcher.get('error', { responseType: 'none' });
   } catch (e) {
     expect(isSLFetcherError(e)).toBe(true);
 
@@ -200,22 +200,22 @@ test('GET authorization error', async () => {
 });
 
 test('GET authorization success (interceptor used)', async () => {
-  slFetcher.addRequestInterceptor(async () => {
+  slFetcher.requestInterceptors.add(async () => {
     return {
       headers: { Authorization: 'test' },
     };
   });
 
   const get = vi.fn(slFetcher.get.bind(slFetcher));
-  await get('authorization');
+  await get('authorization', { responseType: 'none' });
   expect(get).toHaveResolved();
 
-  slFetcher.requestInterceptors = [];
+  slFetcher.requestInterceptors.clear();
 });
 
 test('POST authorization error', async () => {
   try {
-    await slFetcher.post('authorization', POST_DATA);
+    await slFetcher.post('authorization', POST_DATA, { responseType: 'none' });
   } catch (e) {
     expect(isSLFetcherError(e)).toBe(true);
 
@@ -226,23 +226,23 @@ test('POST authorization error', async () => {
 });
 
 test('POST authorization success (interceptor used)', async () => {
-  slFetcher.addRequestInterceptor(async () => {
+  slFetcher.requestInterceptors.add(async () => {
     return {
       headers: { Authorization: 'test' },
     };
   });
 
   const get = vi.fn(slFetcher.post.bind(slFetcher));
-  await get('authorization');
+  await get('authorization', undefined, { responseType: 'none' });
   expect(get).toHaveResolved();
 
-  slFetcher.requestInterceptors = [];
+  slFetcher.requestInterceptors.clear();
 });
 
 test('GET responce interceptor call', async () => {
   let callCount = 0;
 
-  slFetcher.addResponceInterceptor(() => {
+  slFetcher.responseInterceptors.add(() => {
     callCount += 1;
   });
 
@@ -251,6 +251,8 @@ test('GET responce interceptor call', async () => {
 
   await slFetcher.get('posts');
   expect(callCount).toBe(2);
+
+  slFetcher.responseInterceptors.clear();
 });
 
 test('GET with / in url', async () => {
@@ -262,6 +264,6 @@ test('POST form', async () => {
   const formData = new FormData();
   formData.append('test', '123');
   const post = vi.fn(slFetcher.post.bind(slFetcher));
-  await post('form', formData);
+  await post('form', formData, { responseType: 'none' });
   expect(post).toHaveResolved();
 });
